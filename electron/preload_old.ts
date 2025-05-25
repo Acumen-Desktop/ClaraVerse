@@ -1,3 +1,9 @@
+// THIS FILE IS NO LONGER USED - preload.cjs is the active preload script
+// This file was replaced by preload.cjs which is referenced in main.cjs
+// and provides the current IPC communication interface.
+//
+// This file can be removed in a future cleanup.
+
 import { contextBridge, ipcRenderer, clipboard } from 'electron';
 import * as os from 'os';
 import { app } from '@electron/remote';
@@ -56,13 +62,13 @@ contextBridge.exposeInMainWorld(
 contextBridge.exposeInMainWorld(
   'electronAPI', {
     getContainers: () => ipcRenderer.invoke('get-containers'),
-    containerAction: (containerId: string, action: string) => 
+    containerAction: (containerId: string, action: string) =>
       ipcRenderer.invoke('container-action', { containerId, action }),
-    createContainer: (containerConfig: any) => 
+    createContainer: (containerConfig: any) =>
       ipcRenderer.invoke('create-container', containerConfig),
-    getContainerStats: (containerId: string) => 
+    getContainerStats: (containerId: string) =>
       ipcRenderer.invoke('get-container-stats', containerId),
-    getContainerLogs: (containerId: string) => 
+    getContainerLogs: (containerId: string) =>
       ipcRenderer.invoke('get-container-logs', containerId)
   }
 );
@@ -73,4 +79,4 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.on('setup-status', (_event, status) => callback(status));
     }
   }
-); 
+);

@@ -12,7 +12,7 @@
   <br/>
   <a href="https://claraverse.netlify.app/"><img src="https://img.shields.io/badge/Clara-1.2.61-FFD700.svg" alt="Clara Version Badge"></a>
   <br/><br/>
-  <a href="https://clara.badboysm890.in/" target="_blank"><strong>🌐 Try Clara Online</strong></a> • 
+  <a href="https://clara.badboysm890.in/" target="_blank"><strong>🌐 Try Clara Online</strong></a> •
   <a href="https://github.com/badboysm890/ClaraVerse/releases" target="_blank"><strong>⬇️ Download Desktop App</strong></a>
   <br/><br/>
   <a href="https://www.producthunt.com/posts/clara-433c5291-7639-4271-b246-8df30cbc449f" target="_blank">
@@ -135,9 +135,19 @@ Organize your generations with tags, thumbnails, and metadata.
 <p align="center"><img src="/public/screenshots/gallery-screenshot.png" width="800"/></p>
 
 
-## 🧪 Install & Run (Docker)
+## 🧪 Install & Run (Container Engine)
 
-> ✅ **Only Prerequisite**: [Docker Desktop](https://www.docker.com/products/docker-desktop)
+> ✅ **Only Prerequisite**: [Podman](https://podman.io/getting-started/installation) (recommended) or [Docker Desktop](https://www.docker.com/products/docker-desktop)
+
+ClaraVerse now supports both Podman and Docker as container engines. Podman is recommended as it's more secure, doesn't require root privileges, and is fully compatible with Docker commands.
+
+### 🚀 Quick Setup with Podman
+For detailed Podman installation and setup instructions, see our [Podman Setup Guide](PODMAN_SETUP.md).
+
+**Quick install:**
+- **macOS**: `brew install podman`
+- **Linux**: `sudo apt install podman` (Ubuntu/Debian) or `sudo dnf install podman` (Fedora/RHEL)
+- **Windows**: Download from [podman-desktop.io](https://podman-desktop.io/)
 
 ---
 
@@ -154,7 +164,7 @@ Organize your generations with tags, thumbnails, and metadata.
 > Getting the “App is damaged” warning?
 
 ```bash
-# Just right-click the app and hit "Open"  
+# Just right-click the app and hit "Open"
 # Then go to System Preferences > Security and allow it manually
 ```
 
@@ -189,8 +199,8 @@ npm run electron:build     # Desktop
 
 ## 💬 Support / Feedback / Memes
 
-📧 **[praveensm890@gmail.com](mailto:praveensm890@gmail.com)**  
-🐙 [Raise issues or PRs on GitHub](https://github.com/badboysm890/ClaraVerse)  
+📧 **[praveensm890@gmail.com](mailto:praveensm890@gmail.com)**
+🐙 [Raise issues or PRs on GitHub](https://github.com/badboysm890/ClaraVerse)
 🔥 Got memes? Post them. I’ll probably feature them.
 
 ---

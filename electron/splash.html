@@ -24,6 +24,11 @@
       position: relative;
       overflow: hidden;
       margin: auto;
+      -webkit-app-region: drag;
+    }
+
+    .container * {
+      -webkit-app-region: no-drag;
     }
     .logo {
       width: 180px;
@@ -130,7 +135,7 @@
   </div>
   <script>
     const { ipcRenderer } = require('electron');
-    
+
     function addTerminalLine(message, type = 'info') {
       const terminal = document.getElementById('terminal');
       const line = document.createElement('div');
@@ -139,13 +144,13 @@
       terminal.appendChild(line);
       terminal.scrollTop = terminal.scrollHeight;
     }
-    
+
     function updateStatus(message, type = 'info') {
       console.log(`[Splash] ${type}: ${message}`);
       const statusEl = document.getElementById('status');
       const errorEl = document.getElementById('error');
       const progressEl = document.getElementById('progress');
-      
+
       statusEl.textContent = message;
       statusEl.className = 'status ' + type;
 

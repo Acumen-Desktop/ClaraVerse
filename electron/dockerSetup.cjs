@@ -12,10 +12,10 @@ class DockerSetup extends EventEmitter {
     super();
     this.isDevMode = process.env.NODE_ENV === 'development';
     this.appDataPath = path.join(os.homedir(), '.clara');
-    
+
     // Docker binary paths - using Docker CLI path for both docker and compose commands
     this.dockerPath = '/usr/local/bin/docker';
-    
+
     // Initialize Docker client with the first working socket
     this.docker = this.initializeDockerClient();
 
@@ -76,7 +76,7 @@ class DockerSetup extends EventEmitter {
 
     // Docker Compose file path
     this.composeFilePath = path.join(this.appDataPath, 'docker-compose.yml');
-    
+
     // Docker Desktop app paths
     this.dockerAppPaths = {
       darwin: '/Applications/Docker.app'
@@ -110,15 +110,26 @@ class DockerSetup extends EventEmitter {
   }
 
   async execAsync(command, timeout = 60000) {
-    // Replace docker-compose with docker compose
-    command = command
-      .replace(/^docker-compose\s/, `"${this.dockerPath}" compose `)
-      .replace(/^docker\s/, `"${this.dockerPath}" `);
+    // Detect if we're using Podman or Docker and adjust commands accordingly
+    const isPodman = this.isUsingPodman();
+    const containerEngine = isPodman ? 'podman' : 'docker';
+    const enginePath = isPodman ? '/usr/local/bin/podman' : this.dockerPath;
+
+    // Replace docker-compose with appropriate compose command
+    if (isPodman) {
+      command = command
+        .replace(/^docker-compose\s/, `${enginePath} compose `)
+        .replace(/^docker\s/, `${enginePath} `);
+    } else {
+      command = command
+        .replace(/^docker-compose\s/, `"${this.dockerPath}" compose `)
+        .replace(/^docker\s/, `"${this.dockerPath}" `);
+    }
 
     return new Promise((resolve, reject) => {
-      exec(command, { 
-        timeout, 
-        env: { 
+      exec(command, {
+        timeout,
+        env: {
           ...process.env,
           PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'
         }
@@ -130,6 +141,15 @@ class DockerSetup extends EventEmitter {
         }
       });
     });
+  }
+
+  isUsingPodman() {
+    // Check if current socket is a Podman socket
+    if (this.docker && this.docker.modem && this.docker.modem.socketPath) {
+      const socketPath = this.docker.modem.socketPath;
+      return socketPath.includes('podman') || socketPath.includes('/run/user/');
+    }
+    return false;
   }
 
   async findAvailablePort(startPort, endPort = startPort + 100) {
@@ -154,8 +174,15 @@ class DockerSetup extends EventEmitter {
   }
 
   async findWorkingDockerSocket() {
-    // List of possible Docker socket locations
+    console.log('DockerSetup: Searching for working container engine socket...');
+
+    // List of possible Docker/Podman socket locations (Podman first for preference)
     const possibleSockets = [
+      // Podman socket locations (prioritized)
+      path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'podman-machine-default', 'podman.sock'),
+      `/run/user/${process.getuid ? process.getuid() : 1000}/podman/podman.sock`,
+      path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'qemu', 'podman.sock'),
+      '/run/podman/podman.sock',
       // Docker Desktop locations
       path.join(os.homedir(), '.docker', 'desktop', 'docker.sock'),
       path.join(os.homedir(), '.docker', 'docker.sock'),
@@ -169,6 +196,8 @@ class DockerSetup extends EventEmitter {
       // Rancher Desktop socket location
       path.join(os.homedir(), '.rd', 'docker.sock')
     ];
+
+    console.log('DockerSetup: Checking socket locations:', possibleSockets);
 
     // Windows pipe
     if (process.platform === 'win32') {
@@ -193,14 +222,18 @@ class DockerSetup extends EventEmitter {
     // Try each socket location
     for (const socketPath of possibleSockets) {
       try {
+        console.log(`DockerSetup: Checking socket: ${socketPath}`);
         if (fs.existsSync(socketPath)) {
+          console.log(`DockerSetup: Socket exists, testing connection...`);
           const docker = new Docker({ socketPath });
           await docker.ping();
-          console.log('Found working Docker socket at:', socketPath);
+          console.log(`DockerSetup: Socket working! Using: ${socketPath}`);
           return socketPath;
+        } else {
+          console.log(`DockerSetup: Socket does not exist: ${socketPath}`);
         }
       } catch (error) {
-        console.log('Socket not working at:', socketPath, error.message);
+        console.log(`DockerSetup: Socket test failed for ${socketPath}:`, error.message);
         continue;
       }
     }
@@ -215,9 +248,15 @@ class DockerSetup extends EventEmitter {
         return new Docker({ socketPath: '//./pipe/docker_engine' });
       }
 
-      // For other platforms, try to find a working socket synchronously
+      // For other platforms, try to find a working socket synchronously (Podman first)
       const socketPaths = [
         process.env.DOCKER_HOST ? process.env.DOCKER_HOST.replace('unix://', '') : null,
+        // Podman socket locations (prioritized)
+        path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'podman-machine-default', 'podman.sock'),
+        `/run/user/${process.getuid ? process.getuid() : 1000}/podman/podman.sock`,
+        path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'qemu', 'podman.sock'),
+        '/run/podman/podman.sock',
+        // Docker Desktop locations
         path.join(os.homedir(), '.docker', 'desktop', 'docker.sock'),
         path.join(os.homedir(), '.docker', 'docker.sock'),
         '/var/run/docker.sock',
@@ -248,19 +287,30 @@ class DockerSetup extends EventEmitter {
 
   async isDockerRunning() {
     try {
+      console.log('DockerSetup: Checking if container engine is accessible...');
+
       // If current client isn't working, try to find a working socket
       try {
+        console.log('DockerSetup: Trying current Docker client...');
         await this.docker.ping();
+        console.log('DockerSetup: Current Docker client is working');
         return true;
       } catch (error) {
+        console.log('DockerSetup: Current socket not working, trying to find working socket...');
+        console.log('DockerSetup: Current socket error:', error.message);
+
         // Current socket not working, try to find a working one
         const workingSocket = await this.findWorkingDockerSocket();
+        console.log('DockerSetup: Found working socket:', workingSocket);
+
         this.docker = new Docker({ socketPath: workingSocket });
         await this.docker.ping();
+        console.log('DockerSetup: New socket is working');
         return true;
       }
     } catch (error) {
-      console.error('Docker is not running or not accessible:', error.message);
+      console.error('DockerSetup: Container engine is not running or not accessible:', error.message);
+      console.error('DockerSetup: Full error details:', error);
       return false;
     }
   }
@@ -270,12 +320,12 @@ class DockerSetup extends EventEmitter {
       // First check if the network already exists
       const networks = await this.docker.listNetworks();
       const networkExists = networks.some(network => network.Name === 'clara_network');
-      
+
       if (networkExists) {
         console.log('Network clara_network already exists, skipping creation');
         return;
       }
-      
+
       // Create the network if it doesn't exist
       try {
         await this.docker.createNetwork({
@@ -289,17 +339,17 @@ class DockerSetup extends EventEmitter {
           console.log('Network already exists (409 error), continuing...');
           return;
         }
-        
+
         // Log details for other errors to help troubleshooting
         console.error('Error creating network:', error.message);
         console.error('Error details:', error);
-        
+
         // For Mac-specific issues, provide more guidance
         if (process.platform === 'darwin') {
           console.log('On macOS, make sure Docker Desktop is running and properly configured');
           console.log('Try restarting Docker Desktop if issues persist');
         }
-        
+
         throw new Error(`Failed to create network: ${error.message}`);
       }
     } catch (error) {
@@ -366,17 +416,17 @@ class DockerSetup extends EventEmitter {
       try {
         const existingContainer = await this.docker.getContainer(config.name);
         const containerInfo = await existingContainer.inspect();
-        
+
         if (containerInfo.State.Running) {
           console.log(`Container ${config.name} is already running, checking health...`);
-          
+
           // Check if the running container is healthy
           const isHealthy = await config.healthCheck();
           if (isHealthy) {
             console.log(`Container ${config.name} is running and healthy, skipping recreation`);
             return;
           }
-          
+
           console.log(`Container ${config.name} is running but not healthy, will recreate`);
           await existingContainer.stop();
           await existingContainer.remove({ force: true });
@@ -405,7 +455,7 @@ class DockerSetup extends EventEmitter {
       }
 
       console.log(`Creating container ${config.name} with port mapping ${config.internalPort} -> ${config.port}`);
-      
+
       // Create and start container
       const containerConfig = {
         Image: config.image,
@@ -527,7 +577,7 @@ class DockerSetup extends EventEmitter {
           }
 
           let needsUpdate = false;
-          
+
           stream.on('data', (data) => {
             const lines = data.toString().split('\n').filter(Boolean);
             lines.forEach(line => {
@@ -581,30 +631,43 @@ class DockerSetup extends EventEmitter {
 
   async setup(statusCallback, forceUpdateCheck = false) {
     try {
-      if (!await this.isDockerRunning()) {
+      console.log('DockerSetup: Starting setup process...');
+
+      console.log('DockerSetup: Checking if container engine is running...');
+      const dockerRunning = await this.isDockerRunning();
+      console.log(`DockerSetup: Container engine running: ${dockerRunning}`);
+
+      if (!dockerRunning) {
         let dockerDownloadLink;
+        let podmanDownloadLink;
         let installMessage;
         switch (process.platform) {
           case 'darwin':
             dockerDownloadLink = 'https://desktop.docker.com/mac/main/arm64/Docker.dmg';
-            installMessage = 'download Docker Desktop';
+            podmanDownloadLink = 'https://podman.io/getting-started/installation';
+            installMessage = 'install Podman (recommended) or Docker Desktop';
             break;
           case 'win32':
             dockerDownloadLink = 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe';
-            installMessage = 'download Docker Desktop';
+            podmanDownloadLink = 'https://podman.io/getting-started/installation';
+            installMessage = 'install Podman (recommended) or Docker Desktop';
             break;
           case 'linux':
           default:
             dockerDownloadLink = 'https://docs.docker.com/engine/install/';
-            installMessage = 'install Docker Engine';
+            podmanDownloadLink = 'https://podman.io/getting-started/installation';
+            installMessage = 'install Podman (recommended) or Docker Engine';
             break;
         }
-        const errorMessage = `Docker is not running. Please ${installMessage} from:\n${dockerDownloadLink}\n\nAfter installing and starting Docker, please restart Clara.`;
+        const errorMessage = `Container engine is not running. Please ${installMessage}:\n\nPodman (recommended): ${podmanDownloadLink}\nDocker: ${dockerDownloadLink}\n\nAfter installing and starting your container engine, please restart Clara.`;
+        console.error('DockerSetup: Container engine not running:', errorMessage);
         statusCallback(errorMessage, 'error');
         throw new Error(errorMessage);
       }
 
-      statusCallback('Creating Docker network...');
+      const engineName = this.isUsingPodman() ? 'Podman' : 'Docker';
+      statusCallback(`Using ${engineName} as container engine`);
+      statusCallback('Creating container network...');
       await this.createNetwork();
 
       // Check if Ollama is running on the system
@@ -683,11 +746,11 @@ class DockerSetup extends EventEmitter {
       }
 
       console.log(`Checking Python health at http://localhost:${this.ports.python}/health`);
-      
+
       const response = await new Promise((resolve, reject) => {
         const req = http.get(`http://localhost:${this.ports.python}/health`, (res) => {
           console.log(`Python health check status code: ${res.statusCode}`);
-          
+
           if (res.statusCode === 200) {
             let data = '';
             res.on('data', chunk => {
@@ -757,9 +820,9 @@ class DockerSetup extends EventEmitter {
             reject(new Error(`HTTP status ${res.statusCode}`));
           }
         });
-        
+
         req.on('error', () => resolve(false));
-        
+
         // Add timeout to avoid hanging
         req.setTimeout(2000, () => {
           req.destroy();
@@ -805,9 +868,9 @@ class DockerSetup extends EventEmitter {
             resolve(false);
           }
         });
-        
+
         req.on('error', () => resolve(false));
-        
+
         req.setTimeout(5000, () => {
           req.destroy();
           resolve(false);
@@ -821,4 +884,4 @@ class DockerSetup extends EventEmitter {
   }
 }
 
-module.exports = DockerSetup; 
+module.exports = DockerSetup;
