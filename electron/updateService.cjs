@@ -1,8 +1,9 @@
 const { autoUpdater } = require('electron-updater');
 const { dialog } = require('electron');
+const log = require('./helpers/log.cjs');
 
 // Configure logging
-autoUpdater.logger = require('electron-log');
+autoUpdater.logger = log.raw;
 autoUpdater.logger.transports.file.level = 'info';
 
 // Configure update events
@@ -49,7 +50,7 @@ function setupAutoUpdater(mainWindow) {
     console.error('Update error:', err);
     // Log more detailed error information
     autoUpdater.logger.error('Update error details:', err);
-    
+
     dialog.showErrorBox('Update Error', err.message);
   });
 

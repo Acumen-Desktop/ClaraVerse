@@ -3,7 +3,7 @@
 
 const { ipcMain, shell, systemPreferences, app } = require('electron');
 const path = require('path');
-const log = require('electron-log');
+const log = require('../helpers/log.cjs');
 const { checkForUpdates } = require('../updateService.cjs');
 
 // Helper function to format bytes
@@ -271,7 +271,9 @@ function setupIpcHandlers(dockerSetup) {
   });
 }
 
-// Welcome screen handlers
+// Welcome screen handlers - DEPRECATED
+// These handlers are now managed by the welcome module (electron/welcome/welcome_handlers.cjs)
+// This function is kept for backward compatibility only
 function setupWelcomeHandlers(welcomeScreen, startMainAppWithDocker, startMainAppLimited) {
   // Check container engine availability
   ipcMain.handle('check-container-engine', async () => {

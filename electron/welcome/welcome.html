@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*; " />
+  <title>Welcome to ClaraVerse! </title>
+  <link rel="stylesheet" href="./welcome.css">
+
+</head>
+<body>
+  <div class="dashboard">
+    <!-- Header Section -->
+    <header>
+      <div class="brand">
+        <div class="logo" id="app-logo">C</div>
+        <div class="brand-text">
+          <h1>ClaraVerse!</h1>
+          <p class="subtitle">AI-powered creativity and automation platform</p>
+        </div>
+      </div>
+
+      <!-- System Stats Toggle in Header -->
+      <div class="stats-toggle-container">
+        <button class="stats-toggle-btn" id="stats-toggle-btn" popovertarget="stats-popover" title="View System Information">
+          <span class="stats-icon">📊</span>
+          <span class="stats-text">System Info</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Sidebar Section -->
+    <aside>
+      <div class="info-card">
+        <h3>🎯 Getting Started</h3>
+        <p>ClaraVerse requires a container engine to run AI models and services securely in isolated environments.</p>
+      </div>
+
+      <div class="info-card">
+        <h3>🔒 Why Containers?</h3>
+        <p>Containers provide security, consistency, and easy management of complex AI dependencies.</p>
+      </div>
+
+      <div class="installation-guide hidden" id="installation-guide">
+        <h3>🚀 Quick Setup</h3>
+        <p><strong>Recommended:</strong> Install Podman (more secure, no root required)</p>
+        <p id="install-command">• macOS: <code>brew install podman</code></p>
+        <p>• Linux: <code>sudo apt install podman</code> or <code>sudo dnf install podman</code></p>
+        <p>• Windows: Download from <a href="#" data-external-url="https://podman-desktop.io/">podman-desktop.io</a></p>
+        <br>
+        <p><strong>Alternative:</strong> Install Docker Desktop</p>
+        <p>• Download from <a href="#" data-external-url="https://www.docker.com/products/docker-desktop">docker.com</a></p>
+      </div>
+    </aside>
+
+    <!-- Main Content Section -->
+    <main>
+      <section class="status-section">
+        <h2>🔍 System Requirements</h2>
+
+        <div class="status-grid">
+          <article class="status-item" id="container-status">
+            <div class="status-icon checking" id="container-icon">?</div>
+            <div class="status-content">
+              <div class="status-title">Container Engine</div>
+              <div class="status-detail" id="container-detail">Checking for Podman or Docker...</div>
+            </div>
+          </article>
+
+          <article class="status-item" id="network-status">
+            <div class="status-icon checking" id="network-icon">?</div>
+            <div class="status-content">
+              <div class="status-title">Network Access</div>
+              <div class="status-detail" id="network-detail">Checking internet connectivity...</div>
+            </div>
+          </article>
+
+          <article class="status-item" id="storage-status">
+            <div class="status-icon checking" id="storage-icon">?</div>
+            <div class="status-content">
+              <div class="status-title">Storage Space</div>
+              <div class="status-detail" id="storage-detail">Checking available disk space...</div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <!-- Actions Panel -->
+    <div class="actions-panel">
+      <h3>⚡ Actions</h3>
+
+      <button class="btn hidden" id="continue-btn">
+        <span>🚀</span>
+        Continue Setup
+      </button>
+
+      <button class="btn primary hidden" id="start-podman-btn">
+        <span class="spinner hidden" id="start-podman-spinner"></span>
+        <span id="start-podman-text">▶️ Start Podman</span>
+      </button>
+
+      <button class="btn secondary" id="retry-btn" disabled>
+        <span class="spinner hidden" id="retry-spinner"></span>
+        <span id="retry-text">🔄 Retry Check</span>
+      </button>
+
+      <button class="btn secondary" id="guide-btn">
+        <span>📖</span>
+        Setup Guide
+      </button>
+
+      <button class="btn secondary" id="skip-btn">
+        <span>⏭️</span>
+        Skip for Now
+      </button>
+    </div>
+
+    <!-- Footer Section -->
+    <footer>
+      <div class="help-links">
+        <span>Need help?</span>
+        <a href="#" data-external-url="https://github.com/badboysm890/ClaraVerse/blob/main/PODMAN_SETUP.md">Setup Guide</a>
+        <a href="#" data-external-url="https://github.com/badboysm890/ClaraVerse/issues">Report Issue</a>
+      </div>
+      <div>
+        <small>ClaraVerse v1.0.0</small>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Native Stats Popover -->
+  <div class="stats-popover" id="stats-popover" popover anchor="stats-toggle-btn">
+    <div class="stats-popover-header">
+      <h3>📊 System Information</h3>
+      <button class="stats-close-btn" popovertarget="stats-popover" popovertargetaction="hide" title="Close">×</button>
+    </div>
+    <div class="stats-popover-content">
+      <div class="stat-item">
+        <span class="stat-label">User:</span>
+        <span class="stat-value" id="stat-user">Loading...</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">OS:</span>
+        <span class="stat-value" id="stat-os">Loading...</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Platform:</span>
+        <span class="stat-value" id="stat-platform">Loading...</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">CPU:</span>
+        <span class="stat-value" id="stat-cpu">Loading...</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Memory:</span>
+        <span class="stat-value" id="stat-memory">Loading...</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Node:</span>
+        <span class="stat-value" id="stat-node">Loading...</span>
+      </div>
+    </div>
+    <div class="stats-popover-footer">
+      <button class="stats-refresh-btn" id="stats-refresh-btn" title="Refresh Stats">
+        <span class="refresh-icon">🔄</span>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <script src="./welcome_frontend.js"></script>
+  <script src="./stats.js"></script>
+</body>
+</html>

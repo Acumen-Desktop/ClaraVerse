@@ -1,17 +1,16 @@
-const { app, BrowserWindow, dialog, screen } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
-const fs = require('fs');
-const log = require('electron-log');
+const log = require('./helpers/log.cjs');
 const DockerSetup = require('./dockerSetup.cjs');
 const { setupAutoUpdater } = require('./updateService.cjs');
 const SplashScreen = require('./splash.cjs');
-const WelcomeScreen = require('./welcome.cjs');
+const WelcomeScreen = require('./welcome/index.cjs');
 const { createAppMenu } = require('./menu.cjs');
 const { setupIpcHandlers, setupWelcomeHandlers, setupStandaloneHandlers } = require('./ipc/main_handle.cjs');
+const { createMainWindowStateManager } = require('./helpers/window_state.cjs');
 
-// Configure the main process logger
-log.transports.file.level = 'info';
-log.info('Application starting...');
+// Log application startup
+log.info('Line 14 main.cjs: Application starting...');
 
 // Global variables
 let mainWindow;
@@ -19,107 +18,7 @@ let splash;
 let welcomeScreen;
 let dockerSetup;
 let dockerHandlersRegistered = false;
-
-// Window state management
-const WINDOW_STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
-
-function saveWindowState(window) {
-  try {
-    if (!window || window.isDestroyed()) {
-      log.warn('Cannot save window state: window is destroyed or null');
-      return;
-    }
-
-    const bounds = window.getBounds();
-    const isMaximized = window.isMaximized();
-    const isFullScreen = window.isFullScreen();
-
-    const state = {
-      bounds,
-      isMaximized,
-      isFullScreen,
-      timestamp: Date.now()
-    };
-
-    // Ensure the user data directory exists
-    const userDataDir = app.getPath('userData');
-    if (!fs.existsSync(userDataDir)) {
-      fs.mkdirSync(userDataDir, { recursive: true });
-    }
-
-    fs.writeFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2));
-    log.info('Window state saved:', state);
-    console.log('✅ Window state saved to:', WINDOW_STATE_FILE);
-  } catch (error) {
-    log.error('Failed to save window state:', error);
-  }
-}
-
-function loadWindowState() {
-  try {
-    if (fs.existsSync(WINDOW_STATE_FILE)) {
-      const state = JSON.parse(fs.readFileSync(WINDOW_STATE_FILE, 'utf8'));
-      log.info('Raw loaded window state:', state);
-
-      // Validate the state has valid bounds
-      if (state && state.bounds) {
-        const primaryDisplay = screen.getPrimaryDisplay();
-        const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-
-        // More lenient validation - just ensure bounds are reasonable
-        if (state.bounds.width > 200 && state.bounds.height > 150 &&
-            state.bounds.width <= screenWidth + 100 && state.bounds.height <= screenHeight + 100) {
-
-          // Get all displays for multi-monitor support
-          const allDisplays = screen.getAllDisplays();
-          let isOnAnyDisplay = false;
-
-          // Check if window is visible on any display
-          for (const display of allDisplays) {
-            const { x: dispX, y: dispY, width: dispWidth, height: dispHeight } = display.workArea;
-
-            // Check if window overlaps with this display
-            const windowRight = state.bounds.x + state.bounds.width;
-            const windowBottom = state.bounds.y + state.bounds.height;
-            const displayRight = dispX + dispWidth;
-            const displayBottom = dispY + dispHeight;
-
-            // Window is on this display if there's any overlap
-            if (state.bounds.x < displayRight && windowRight > dispX &&
-                state.bounds.y < displayBottom && windowBottom > dispY) {
-              isOnAnyDisplay = true;
-              log.info(`Main window is visible on display: ${display.id} at ${dispX},${dispY} ${dispWidth}x${dispHeight}`);
-              break;
-            }
-          }
-
-          // Only adjust position if window is completely off all displays
-          if (!isOnAnyDisplay) {
-            log.warn('Main window is off all displays, repositioning to primary display');
-            state.bounds.x = Math.max(0, Math.min(state.bounds.x, screenWidth - state.bounds.width));
-            state.bounds.y = Math.max(0, Math.min(state.bounds.y, screenHeight - state.bounds.height));
-          } else {
-            log.info('Main window position is valid for multi-monitor setup');
-          }
-
-          log.info('Successfully loaded and validated window state:', state);
-          console.log('✅ Window state loaded from:', WINDOW_STATE_FILE);
-          return state;
-        } else {
-          log.warn('Window state bounds are invalid:', state.bounds, 'Screen:', { screenWidth, screenHeight });
-        }
-      } else {
-        log.warn('Window state missing bounds:', state);
-      }
-    } else {
-      log.info('No window state file found, will use defaults');
-    }
-  } catch (error) {
-    log.error('Failed to load window state:', error);
-  }
-
-  return null;
-}
+let mainWindowStateManager;
 
 // Register Docker container management IPC handlers
 function registerDockerContainerHandlers() {
@@ -137,8 +36,13 @@ function registerDockerContainerHandlers() {
 }
 
 function registerWelcomeHandlers() {
-  // Use the refactored welcome handlers
-  setupWelcomeHandlers(welcomeScreen, startMainAppWithDocker, startMainAppLimited);
+  // Use the new modular welcome handlers
+  if (welcomeScreen && welcomeScreen.setupHandlers) {
+    welcomeScreen.setupHandlers(startMainAppWithDocker, startMainAppLimited);
+  } else {
+    // Fallback to old method for compatibility
+    setupWelcomeHandlers(welcomeScreen, startMainAppWithDocker, startMainAppLimited);
+  }
 }
 
 async function initializeApp() {
@@ -253,43 +157,16 @@ function startMainAppLimited() {
 function createMainWindow() {
   if (mainWindow) return;
 
-  // Load saved window state or use defaults
-  const savedState = loadWindowState();
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  // Create window state manager
+  mainWindowStateManager = createMainWindowStateManager();
 
-  // Default window dimensions
-  const defaultWidth = 1000;
-  const defaultHeight = 700;
-  const minWidth = 800;
-  const minHeight = 600;
-
-  // Use saved bounds or calculate centered position
-  let windowOptions;
-  if (savedState && savedState.bounds) {
-    windowOptions = {
-      x: savedState.bounds.x,
-      y: savedState.bounds.y,
-      width: savedState.bounds.width,
-      height: savedState.bounds.height,
-    };
-    log.info(`Using saved window state:`, windowOptions);
-  } else {
-    // Center the window on screen
-    windowOptions = {
-      width: defaultWidth,
-      height: defaultHeight,
-      x: Math.floor((screenWidth - defaultWidth) / 2),
-      y: Math.floor((screenHeight - defaultHeight) / 2),
-    };
-    log.info(`Using default window options (centered):`, windowOptions);
-    log.info(`Screen dimensions:`, { screenWidth, screenHeight });
-  }
+  // Get window options from state manager
+  const windowOptions = mainWindowStateManager.getWindowOptions();
 
   mainWindow = new BrowserWindow({
     ...windowOptions,
-    minWidth,
-    minHeight,
+    minWidth: 800,
+    minHeight: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -308,15 +185,8 @@ function createMainWindow() {
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default'
   });
 
-  // Restore window state if it was maximized or fullscreen
-  if (savedState) {
-    if (savedState.isMaximized) {
-      mainWindow.maximize();
-    }
-    if (savedState.isFullScreen) {
-      mainWindow.setFullScreen(true);
-    }
-  }
+  // Restore window state (maximize, fullscreen)
+  mainWindowStateManager.restoreWindowState(mainWindow);
 
   // Create and set the application menu
   createAppMenu(mainWindow);
@@ -328,12 +198,12 @@ function createMainWindow() {
   const { ipcMain } = require('electron');
   ipcMain.handle('debug-save-window-state', () => {
     log.info('Manual window state save requested');
-    saveWindowState(mainWindow);
+    mainWindowStateManager.saveCurrentState();
     return 'Window state saved';
   });
 
   ipcMain.handle('debug-get-window-state', () => {
-    const state = loadWindowState();
+    const state = mainWindowStateManager.getCurrentState();
     log.info('Current saved window state:', state);
     return state;
   });
@@ -396,13 +266,13 @@ function createMainWindow() {
 
     // Setup window state handlers after window is shown
     setTimeout(() => {
-      setupWindowStateHandlers();
+      mainWindowStateManager.setupEventHandlers(mainWindow);
 
       const finalBounds = mainWindow?.getBounds();
       log.info(`Main window final bounds after show:`, finalBounds);
 
       // Save initial state
-      saveWindowState(mainWindow);
+      mainWindowStateManager.saveCurrentState();
     }, 100);
 
     // Open DevTools in development mode after window is shown and positioned
@@ -418,62 +288,9 @@ function createMainWindow() {
     }
   });
 
-  // Save window state when it changes - setup after window is ready
-  const setupWindowStateHandlers = () => {
-    const saveStateThrottled = (() => {
-      let timeout;
-      return (eventName) => {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-          log.info(`Saving window state due to ${eventName} event`);
-          saveWindowState(mainWindow);
-        }, 500);
-      };
-    })();
-
-    log.info('Setting up window state event handlers');
-
-    mainWindow.on('resize', () => {
-      const bounds = mainWindow.getBounds();
-      log.debug('Window resize event triggered, new bounds:', bounds);
-      console.log('🔄 Window resized to:', bounds);
-      saveStateThrottled('resize');
-    });
-
-    mainWindow.on('move', () => {
-      const bounds = mainWindow.getBounds();
-      log.debug('Window move event triggered, new bounds:', bounds);
-      console.log('🔄 Window moved to:', bounds);
-      saveStateThrottled('move');
-    });
-
-    mainWindow.on('maximize', () => {
-      log.info('Window maximize event triggered');
-      saveWindowState(mainWindow);
-    });
-
-    mainWindow.on('unmaximize', () => {
-      log.info('Window unmaximize event triggered');
-      saveWindowState(mainWindow);
-    });
-
-    mainWindow.on('enter-full-screen', () => {
-      log.info('Window enter-full-screen event triggered');
-      saveWindowState(mainWindow);
-    });
-
-    mainWindow.on('leave-full-screen', () => {
-      log.info('Window leave-full-screen event triggered');
-      saveWindowState(mainWindow);
-    });
-  };
-
   mainWindow.on('closed', () => {
-    // Save final state before closing
-    if (mainWindow) {
-      saveWindowState(mainWindow);
-    }
     mainWindow = null;
+    mainWindowStateManager = null;
   });
 }
 
@@ -488,8 +305,8 @@ app.whenReady().then(() => {
 // Save window state before quitting
 app.on('before-quit', () => {
   log.info('App is about to quit, saving window state');
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    saveWindowState(mainWindow);
+  if (mainWindowStateManager) {
+    mainWindowStateManager.saveCurrentState();
   }
 });
 
