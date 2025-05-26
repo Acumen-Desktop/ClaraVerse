@@ -26,8 +26,15 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_loaders import CSVLoader
 from langchain_community.document_loaders import TextLoader  # Fixed import
 
-# Import Speech2Text
-from Speech2Text import Speech2Text
+# Import Speech2Text (conditional for lean mode)
+try:
+    from Speech2Text import Speech2Text
+    SPEECH2TEXT_AVAILABLE = True
+    logger.info("Speech2Text module loaded successfully")
+except ImportError as e:
+    logger.warning(f"Speech2Text not available (lean mode): {e}")
+    Speech2Text = None
+    SPEECH2TEXT_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -101,7 +108,7 @@ def get_db_connection(timeout=20):
     conn = None
     retries = 0
     last_error = None
-    
+
     while retries < MAX_RETRIES:
         try:
             conn = sqlite3.connect(DATABASE, timeout=timeout)
@@ -123,7 +130,7 @@ def get_db_connection(timeout=20):
             if retries < MAX_RETRIES:
                 time.sleep(RETRY_DELAY * (2 ** retries))  # Exponential backoff
             logger.warning(f"Database retry {retries}/{MAX_RETRIES}: {str(e)}")
-    
+
     logger.error(f"Database error after {MAX_RETRIES} retries: {last_error}")
     raise HTTPException(
         status_code=500,
@@ -142,7 +149,7 @@ def init_db():
                     value TEXT
                 )
             """)
-            
+
             # Create documents table to track uploaded files
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS documents (
@@ -154,7 +161,7 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             # Create collections table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS collections (
@@ -165,7 +172,7 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             # Create document_chunks table to track individual chunks from a document
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS document_chunks (
@@ -175,21 +182,21 @@ def init_db():
                     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
                 )
             """)
-            
+
             # Create clara-assistant collection if it doesn't exist
             cursor.execute("""
                 INSERT OR IGNORE INTO collections (name, description)
                 VALUES ('clara-assistant', 'Default collection for Clara Assistant')
             """)
-            
+
             # Check if test data exists
             cursor.execute("SELECT COUNT(*) FROM test")
             count = cursor.fetchone()[0]
             if count == 0:
                 cursor.execute("INSERT INTO test (value) VALUES ('Hello from SQLite')")
-            
+
             conn.commit()
-                
+
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
@@ -211,11 +218,11 @@ doc_ai_cache = {}
 def get_doc_ai(collection_name: str = "default_collection"):
     """Create or retrieve the DocumentAI instance from cache"""
     global doc_ai_cache
-    
+
     # Return cached instance if it exists
     if collection_name in doc_ai_cache:
         return doc_ai_cache[collection_name]
-    
+
     # Create new instance if not in cache
     if collection_name.startswith("temp_collection_"):
         # Use temp directory for temporary collections
@@ -223,15 +230,15 @@ def get_doc_ai(collection_name: str = "default_collection"):
     else:
         # Use regular directory for permanent collections
         persist_dir = os.path.join(vectordb_dir, collection_name)
-    
+
     os.makedirs(persist_dir, exist_ok=True)
-    
+
     # Create new instance and cache it
     doc_ai_cache[collection_name] = DocumentAI(
         persist_directory=persist_dir,
         collection_name=collection_name
     )
-    
+
     return doc_ai_cache[collection_name]
 
 # Speech2Text instance cache
@@ -240,7 +247,13 @@ speech2text_instance = None
 def get_speech2text():
     """Create or retrieve the Speech2Text instance from cache"""
     global speech2text_instance
-    
+
+    if not SPEECH2TEXT_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Speech-to-text functionality not available in lean mode. Please use the full version for audio transcription."
+        )
+
     if speech2text_instance is None:
         # Use tiny model with CPU for maximum compatibility
         speech2text_instance = Speech2Text(
@@ -248,7 +261,7 @@ def get_speech2text():
             device="cpu",
             compute_type="int8"
         )
-    
+
     return speech2text_instance
 
 # Pydantic models for request/response
@@ -273,8 +286,8 @@ class CollectionCreate(BaseModel):
 def read_root():
     """Root endpoint for basic health check"""
     return {
-        "status": "ok", 
-        "service": "Clara Backend", 
+        "status": "ok",
+        "service": "Clara Backend",
         "port": PORT,
         "uptime": str(datetime.now() - datetime.fromisoformat(START_TIME)),
         "start_time": START_TIME
@@ -288,7 +301,7 @@ def read_test():
             cursor = conn.cursor()
             cursor.execute("SELECT id, value FROM test LIMIT 1")
             row = cursor.fetchone()
-            
+
         if row:
             return JSONResponse(content={"id": row[0], "value": row[1], "port": PORT})
         return JSONResponse(content={"error": "No data found", "port": PORT})
@@ -312,20 +325,20 @@ async def create_collection(collection: CollectionCreate):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
+
             # First check if collection exists
             cursor.execute(
                 "SELECT name FROM collections WHERE name = ?",
                 (collection.name,)
             )
             existing = cursor.fetchone()
-            
+
             if existing:
                 return JSONResponse(
                     status_code=409,
                     content={"detail": f"Collection '{collection.name}' already exists"}
                 )
-            
+
             # Create the collection
             try:
                 cursor.execute(
@@ -342,12 +355,12 @@ async def create_collection(collection: CollectionCreate):
                     status_code=409,
                     content={"detail": f"Collection '{collection.name}' already exists"}
                 )
-            
+
             # Initialize vector store for the collection
             get_doc_ai(collection.name)
-            
+
             return {"message": f"Collection '{collection.name}' created successfully"}
-            
+
     except Exception as e:
         logger.error(f"Error creating collection: {e}")
         logger.error(traceback.format_exc())
@@ -375,7 +388,7 @@ async def delete_collection(collection_name: str):
     try:
         # Delete from vector store first
         doc_ai = get_doc_ai(collection_name)
-        
+
         # Get all document chunks for this collection
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -386,24 +399,24 @@ async def delete_collection(collection_name: str):
                 WHERE d.collection_name = ?
             """, (collection_name,))
             chunk_ids = [row[0] for row in cursor.fetchall()]
-            
+
             if chunk_ids:
                 # Delete chunks from vector store
                 doc_ai.delete_documents(chunk_ids)
-            
+
             # Delete all documents and chunks from SQLite
             cursor.execute("DELETE FROM documents WHERE collection_name = ?", (collection_name,))
-            
+
             # Delete collection record
             cursor.execute("DELETE FROM collections WHERE name = ?", (collection_name,))
             conn.commit()
-            
+
         # Remove from cache to force recreation
         if collection_name in doc_ai_cache:
             del doc_ai_cache[collection_name]
-            
+
         return {"message": f"Collection {collection_name} deleted successfully"}
-        
+
     except Exception as e:
         logger.error(f"Error deleting collection: {e}")
         logger.error(traceback.format_exc())
@@ -442,16 +455,16 @@ async def recreate_collection(collection_name: str = "default_collection"):
 
         # Create directory for new collection
         os.makedirs(persist_dir, exist_ok=True)
-        
+
         # Get a fresh DocumentAI instance
         doc_ai = DocumentAI(
             persist_directory=persist_dir,
             collection_name=collection_name
         )
-        
+
         # Store in cache
         doc_ai_cache[collection_name] = doc_ai
-        
+
         # Create new collection record
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -460,12 +473,12 @@ async def recreate_collection(collection_name: str = "default_collection"):
                 (collection_name, f"Recreated collection {collection_name}")
             )
             conn.commit()
-        
+
         return {
             "message": f"Collection {collection_name} recreated successfully",
             "collection_name": collection_name
         }
-        
+
     except Exception as e:
         logger.error(f"Error recreating collection: {e}")
         logger.error(traceback.format_exc())
@@ -492,11 +505,11 @@ async def upload_document(
     except Exception as e:
         logger.error(f"Error checking/creating collection: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    
+
     # Create a temporary directory to save the uploaded file
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / file.filename
-        
+
         # Save uploaded file
         try:
             with open(file_path, "wb") as f:
@@ -504,12 +517,12 @@ async def upload_document(
         except Exception as e:
             logger.error(f"Error saving file: {e}")
             raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
-        
+
         # Process the file based on extension
         file_extension = file.filename.lower().split('.')[-1]
         documents = []
         file_type = file_extension
-        
+
         try:
             if file_extension == 'pdf':
                 loader = PyPDFLoader(str(file_path))
@@ -522,14 +535,14 @@ async def upload_document(
                 documents = loader.load()
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_extension}")
-            
+
             # Get or create DocumentAI with specific collection - use cache
             doc_ai = get_doc_ai(collection_name)
-            
+
             # Parse metadata if provided
             try:
                 meta_dict = json.loads(metadata)
-                
+
                 # Add file metadata to each document
                 for doc in documents:
                     doc.metadata.update(meta_dict)
@@ -537,10 +550,10 @@ async def upload_document(
                     doc.metadata["file_type"] = file_extension
             except json.JSONDecodeError:
                 logger.warning(f"Invalid metadata JSON: {metadata}")
-            
+
             # Add documents to vector store
             doc_ids = doc_ai.add_documents(documents)
-            
+
             # Update database
             with get_db_connection() as conn:
                 cursor = conn.cursor()
@@ -549,21 +562,21 @@ async def upload_document(
                     (file.filename, file_type, collection_name, metadata)
                 )
                 document_id = cursor.lastrowid
-                
+
                 # Store the relationship between document and its chunks
                 for chunk_id in doc_ids:
                     cursor.execute(
                         "INSERT INTO document_chunks (document_id, chunk_id) VALUES (?, ?)",
                         (document_id, chunk_id)
                     )
-                
+
                 # Update document count in collection
                 cursor.execute(
                     "UPDATE collections SET document_count = document_count + ? WHERE name = ?",
                     (1, collection_name)  # Only count the original document, not chunks
                 )
                 conn.commit()
-            
+
             return {
                 "status": "success",
                 "filename": file.filename,
@@ -571,7 +584,7 @@ async def upload_document(
                 "document_count": len(documents),
                 "document_ids": doc_ids[:5] + ['...'] if len(doc_ids) > 5 else doc_ids
             }
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -585,24 +598,24 @@ async def list_documents(collection_name: Optional[str] = None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
+
             query = """
-                SELECT d.id, d.filename, d.file_type, d.collection_name, d.metadata, 
-                       d.created_at, COUNT(dc.id) as chunk_count 
+                SELECT d.id, d.filename, d.file_type, d.collection_name, d.metadata,
+                       d.created_at, COUNT(dc.id) as chunk_count
                 FROM documents d
                 LEFT JOIN document_chunks dc ON d.id = dc.document_id
             """
-            
+
             params = []
             if collection_name:
                 query += " WHERE d.collection_name = ?"
                 params.append(collection_name)
-                
+
             query += " GROUP BY d.id"
-            
+
             cursor.execute(query, params)
             documents = [dict(row) for row in cursor.fetchall()]
-            
+
             return {"documents": documents}
     except Exception as e:
         logger.error(f"Error listing documents: {str(e)}")
@@ -617,51 +630,51 @@ async def delete_document(document_id: int):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT collection_name FROM documents WHERE id = ?", 
+                "SELECT collection_name FROM documents WHERE id = ?",
                 (document_id,)
             )
             document = cursor.fetchone()
-            
+
             if not document:
                 raise HTTPException(status_code=404, detail=f"Document with ID {document_id} not found")
-                
+
             collection_name = document['collection_name']
-            
+
             # Get all chunks related to this document
             cursor.execute(
-                "SELECT chunk_id FROM document_chunks WHERE document_id = ?", 
+                "SELECT chunk_id FROM document_chunks WHERE document_id = ?",
                 (document_id,)
             )
             chunks = [row['chunk_id'] for row in cursor.fetchall()]
-            
+
             # Get DocumentAI instance for this collection
             doc_ai = get_doc_ai(collection_name)
-            
+
             # Delete chunks from vector store
             if chunks:
                 doc_ai.delete_documents(chunks)
-            
+
             # Delete document chunks first (in case CASCADE doesn't work)
             cursor.execute(
-                "DELETE FROM document_chunks WHERE document_id = ?", 
+                "DELETE FROM document_chunks WHERE document_id = ?",
                 (document_id,)
             )
-            
+
             # Delete the document itself
             cursor.execute(
-                "DELETE FROM documents WHERE id = ?", 
+                "DELETE FROM documents WHERE id = ?",
                 (document_id,)
             )
-            
+
             # Update document count in collection
             cursor.execute(
                 "UPDATE collections SET document_count = document_count - 1 WHERE name = ? AND document_count > 0",
                 (collection_name,)
             )
             conn.commit()
-            
+
         return {
-            "status": "success", 
+            "status": "success",
             "message": f"Document {document_id} and its {len(chunks)} chunks deleted"
         }
     except HTTPException:
@@ -676,13 +689,13 @@ def format_chroma_filter(filter_dict: Optional[Dict[str, Any]]) -> Optional[Dict
     """Format a filter dictionary to be compatible with Chroma"""
     if not filter_dict:
         return None
-        
+
     chroma_filter = {}
     for key, value in filter_dict.items():
         # Skip empty values
         if value is None or (isinstance(value, dict) and not value):
             continue
-            
+
         if isinstance(value, dict):
             # Check if it has valid operators
             if not any(op.startswith('$') for op in value.keys()):
@@ -694,7 +707,7 @@ def format_chroma_filter(filter_dict: Optional[Dict[str, Any]]) -> Optional[Dict
         else:
             # Simple value, convert to $eq
             chroma_filter[key] = {"$eq": value}
-    
+
     # Return None if the filter ended up empty
     return chroma_filter if chroma_filter else None
 
@@ -704,17 +717,17 @@ async def search_documents(request: SearchRequest):
     try:
         # Get DocumentAI with specific collection from cache
         doc_ai = get_doc_ai(request.collection_name)
-        
+
         # Format the filter if provided, otherwise pass None
         formatted_filter = format_chroma_filter(request.filter)
-        
+
         # Perform similarity search
         results = doc_ai.similarity_search(
             query=request.query,
             k=request.k,
             filter=formatted_filter
         )
-        
+
         # Format results
         formatted_results = []
         for doc in results:
@@ -723,7 +736,7 @@ async def search_documents(request: SearchRequest):
                 "metadata": doc.metadata,
                 "score": doc.metadata.get("score", None)  # Some vector stores return scores
             })
-        
+
         return {
             "query": request.query,
             "collection": request.collection_name,
@@ -740,13 +753,13 @@ async def chat_with_documents(request: ChatRequest):
     try:
         # Get DocumentAI with specific collection from cache
         doc_ai = get_doc_ai(request.collection_name)
-        
+
         # Use default or custom system template
         system_template = request.system_template
-        
+
         # Format the filter if provided, otherwise pass None
         formatted_filter = format_chroma_filter(request.filter)
-        
+
         # Get response from AI
         if system_template:
             response = doc_ai.chat_with_context(
@@ -761,7 +774,7 @@ async def chat_with_documents(request: ChatRequest):
                 k=request.k,
                 filter=formatted_filter
             )
-        
+
         return {
             "query": request.query,
             "collection": request.collection_name,
@@ -779,16 +792,16 @@ async def direct_chat(query: str, system_prompt: Optional[str] = None):
     try:
         # Get DocumentAI instance
         doc_ai = get_doc_ai()
-        
+
         # Use default or custom system prompt
         system_prompt = system_prompt or "You are a helpful assistant."
-        
+
         # Get response from AI
         response = doc_ai.chat(
             user_message=query,
             system_prompt=system_prompt
         )
-        
+
         return {
             "query": query,
             "response": response
@@ -798,59 +811,62 @@ async def direct_chat(query: str, system_prompt: Optional[str] = None):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error in direct chat: {str(e)}")
 
-# Audio transcription endpoint
-@app.post("/transcribe")
-async def transcribe_audio(
-    file: UploadFile = File(...),
-    language: Optional[str] = Form(None),
-    beam_size: int = Form(5),
-    initial_prompt: Optional[str] = Form(None)
-):
-    """Transcribe an audio file using faster-whisper (CPU mode)"""
-    # Validate file extension
-    supported_formats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'opus']
-    file_extension = file.filename.lower().split('.')[-1]
-    
-    if file_extension not in supported_formats:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Unsupported audio format: {file_extension}. Supported formats: {', '.join(supported_formats)}"
-        )
-    
-    # Read file content
-    try:
-        content = await file.read()
-        if not content:
-            raise HTTPException(status_code=400, detail="Empty audio file")
-    except Exception as e:
-        logger.error(f"Error reading audio file: {e}")
-        raise HTTPException(status_code=500, detail=f"Error reading audio file: {str(e)}")
-    
-    # Get Speech2Text instance
-    try:
-        s2t = get_speech2text()
-    except Exception as e:
-        logger.error(f"Error initializing Speech2Text: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to initialize Speech2Text: {str(e)}")
-    
-    # Transcribe the audio
-    try:
-        result = s2t.transcribe_bytes(
-            content,
-            language=language,
-            beam_size=beam_size,
-            initial_prompt=initial_prompt
-        )
-        
-        return {
-            "status": "success",
-            "filename": file.filename,
-            "transcription": result
-        }
-    except Exception as e:
-        logger.error(f"Error transcribing audio: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
+# Audio transcription endpoint (only available when Speech2Text is loaded)
+if SPEECH2TEXT_AVAILABLE:
+    @app.post("/transcribe")
+    async def transcribe_audio(
+        file: UploadFile = File(...),
+        language: Optional[str] = Form(None),
+        beam_size: int = Form(5),
+        initial_prompt: Optional[str] = Form(None)
+    ):
+        """Transcribe an audio file using faster-whisper (CPU mode)"""
+        # Validate file extension
+        supported_formats = ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'opus']
+        file_extension = file.filename.lower().split('.')[-1]
+
+        if file_extension not in supported_formats:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported audio format: {file_extension}. Supported formats: {', '.join(supported_formats)}"
+            )
+
+        # Read file content
+        try:
+            content = await file.read()
+            if not content:
+                raise HTTPException(status_code=400, detail="Empty audio file")
+        except Exception as e:
+            logger.error(f"Error reading audio file: {e}")
+            raise HTTPException(status_code=500, detail=f"Error reading audio file: {str(e)}")
+
+        # Get Speech2Text instance
+        try:
+            s2t = get_speech2text()
+        except Exception as e:
+            logger.error(f"Error initializing Speech2Text: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to initialize Speech2Text: {str(e)}")
+
+        # Transcribe the audio
+        try:
+            result = s2t.transcribe_bytes(
+                content,
+                language=language,
+                beam_size=beam_size,
+                initial_prompt=initial_prompt
+            )
+
+            return {
+                "status": "success",
+                "filename": file.filename,
+                "transcription": result
+            }
+        except Exception as e:
+            logger.error(f"Error transcribing audio: {e}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
+else:
+    logger.info("Speech2Text not available - /transcribe endpoint disabled")
 
 # Handle graceful shutdown
 def handle_exit(signum, frame):
@@ -864,7 +880,7 @@ signal.signal(signal.SIGTERM, handle_exit)
 if __name__ == "__main__":
     import uvicorn
     logger.info(f"Starting server on {HOST}:{PORT}")
-    
+
     # Start the server with reload=False to prevent duplicate processes
     uvicorn.run(
         "main:app",

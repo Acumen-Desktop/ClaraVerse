@@ -48,9 +48,10 @@ class WelcomeHandlers {
     });
 
     // Start main app with container setup
-    ipcMain.handle('start-main-app', async () => {
-      log.info('Line 35 welcome_handlers.cjs: Starting main app with containers');
-      await this.startMainAppWithDocker();
+    ipcMain.handle('start-main-app', async (_, options = {}) => {
+      const leanMode = options.leanMode || false;
+      log.info(`Line 35 welcome_handlers.cjs: Starting main app with containers (lean mode: ${leanMode})`);
+      await this.startMainAppWithDocker(leanMode);
     });
 
     // Start main app in limited mode (no containers)

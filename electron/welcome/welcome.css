@@ -438,6 +438,75 @@
       box-shadow: none;
     }
 
+    /* Setup Mode Selection */
+    .setup-mode-section {
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 12px;
+      border: 2px solid #e9ecef;
+    }
+
+    .setup-mode-section h4 {
+      margin: 0 0 1rem 0;
+      color: #2c3e50;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .mode-toggle {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .mode-option {
+      display: flex;
+      align-items: center;
+      padding: 1rem;
+      border-radius: 8px;
+      border: 2px solid #dee2e6;
+      background: rgba(255, 255, 255, 0.9);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .mode-option:hover {
+      border-color: #667eea;
+      background: rgba(102, 126, 234, 0.05);
+    }
+
+    .mode-option input[type="radio"] {
+      margin-right: 0.75rem;
+      accent-color: #667eea;
+      transform: scale(1.2);
+    }
+
+    .mode-option input[type="radio"]:checked + .mode-label {
+      color: #667eea;
+    }
+
+    .mode-option:has(input[type="radio"]:checked) {
+      border-color: #667eea;
+      background: rgba(102, 126, 234, 0.1);
+    }
+
+    .mode-label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .mode-label strong {
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .mode-label small {
+      color: #6c757d;
+      font-size: 0.85em;
+    }
+
     /* Footer Section */
     footer {
       grid-area: footer;

@@ -8,10 +8,14 @@ const tar = require('tar-fs');
 const http = require('http');
 
 class DockerSetup extends EventEmitter {
-  constructor() {
+  constructor(options = {}) {
     super();
     this.isDevMode = process.env.NODE_ENV === 'development';
     this.appDataPath = path.join(os.homedir(), '.clara');
+
+    // Lean mode configuration
+    this.leanMode = options.leanMode || false;
+    console.log(`DockerSetup: Initializing in ${this.leanMode ? 'LEAN' : 'FULL'} mode`);
 
     // Docker binary paths - using Docker CLI path for both docker and compose commands
     this.dockerPath = '/usr/local/bin/docker';
@@ -26,7 +30,7 @@ class DockerSetup extends EventEmitter {
     this.containers = {
       python: {
         name: 'clara_python',
-        image: 'clara17verse/clara-backend:latest',
+        image: this.leanMode ? 'clara17verse/clara-backend:lean' : 'clara17verse/clara-backend:latest',
         port: 5001,
         internalPort: 5000,
         healthCheck: this.isPythonRunning.bind(this),
@@ -109,6 +113,19 @@ class DockerSetup extends EventEmitter {
     });
   }
 
+  // Get containers based on mode (lean vs full)
+  getActiveContainers() {
+    if (this.leanMode) {
+      // Lean mode: only essential backend service
+      return {
+        python: this.containers.python
+      };
+    } else {
+      // Full mode: all services
+      return this.containers;
+    }
+  }
+
   async execAsync(command, timeout = 60000) {
     // Detect if we're using Podman or Docker and adjust commands accordingly
     const isPodman = this.isUsingPodman();
@@ -179,6 +196,7 @@ class DockerSetup extends EventEmitter {
     // List of possible Docker/Podman socket locations (Podman first for preference)
     const possibleSockets = [
       // Podman socket locations (prioritized)
+      path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'podman.sock'),
       path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'podman-machine-default', 'podman.sock'),
       `/run/user/${process.getuid ? process.getuid() : 1000}/podman/podman.sock`,
       path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'qemu', 'podman.sock'),
@@ -252,6 +270,7 @@ class DockerSetup extends EventEmitter {
       const socketPaths = [
         process.env.DOCKER_HOST ? process.env.DOCKER_HOST.replace('unix://', '') : null,
         // Podman socket locations (prioritized)
+        path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'podman.sock'),
         path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'podman-machine-default', 'podman.sock'),
         `/run/user/${process.getuid ? process.getuid() : 1000}/podman/podman.sock`,
         path.join(os.homedir(), '.local', 'share', 'containers', 'podman', 'machine', 'qemu', 'podman.sock'),
@@ -670,11 +689,22 @@ class DockerSetup extends EventEmitter {
       statusCallback('Creating container network...');
       await this.createNetwork();
 
+      // Get active containers based on mode
+      const activeContainers = this.getActiveContainers();
+      const containerCount = Object.keys(activeContainers).length;
+
+      if (this.leanMode) {
+        statusCallback(`🚀 Lean mode: Setting up ${containerCount} essential service(s) only`);
+        statusCallback('💡 Skipping heavy services (interpreter, N8N) for faster startup');
+      } else {
+        statusCallback(`🔥 Full mode: Setting up all ${containerCount} services`);
+      }
+
       // Check if Ollama is running on the system
       const ollamaRunning = await this.isOllamaRunning();
 
       // Check and pull images if needed
-      for (const [name, config] of Object.entries(this.containers)) {
+      for (const [name, config] of Object.entries(activeContainers)) {
         // Skip pulling Ollama image if Ollama is already running
         if (name === 'ollama' && ollamaRunning) {
           statusCallback('Ollama is already running on the system, skipping image pull and container creation.');
@@ -696,7 +726,7 @@ class DockerSetup extends EventEmitter {
       }
 
       // Start containers in sequence
-      for (const [name, config] of Object.entries(this.containers)) {
+      for (const [name, config] of Object.entries(activeContainers)) {
         // Skip starting Ollama container if Ollama is already running
         if (name === 'ollama' && ollamaRunning) {
           continue;

@@ -1,0 +1,35 @@
+# ClaraVerse Lean Backend - Essential Dependencies Only
+# Total size: ~200MB (vs 3GB+ full version)
+
+# Core Web Framework
+fastapi==0.115.12
+uvicorn==0.34.2
+python-multipart==0.0.20
+
+# Essential AI/LLM
+langchain-core==0.3.61
+langchain-community==0.3.24
+langchain-chroma==0.1.4
+langchain-ollama==0.3.3
+ollama==0.4.8
+
+# Basic Document Processing
+pypdf==5.5.0
+python-docx==1.1.2
+
+# Core Utilities
+requests==2.32.3
+pydantic==2.11.5
+numpy>=1.26.2,<2.0
+
+# Optional: Lightweight vector store (instead of ChromaDB)
+# faiss-cpu==1.8.0  # Uncomment if you need vector search
+
+# Removed heavy packages:
+# - torch (865MB)
+# - transformers (large)
+# - chromadb (complex dependencies)
+# - diffusers (image generation)
+# - accelerate (GPU acceleration)
+# - faster-whisper (speech processing)
+# - All CUDA packages (3GB+)

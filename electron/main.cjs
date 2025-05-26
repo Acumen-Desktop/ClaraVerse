@@ -60,9 +60,9 @@ async function initializeApp() {
   }
 }
 
-async function startMainAppWithDocker() {
+async function startMainAppWithDocker(leanMode = false) {
   try {
-    log.info('Starting main app with container setup...');
+    log.info(`Starting main app with container setup (lean mode: ${leanMode})...`);
 
     // Close welcome screen
     welcomeScreen?.close();
@@ -72,9 +72,9 @@ async function startMainAppWithDocker() {
     splash = new SplashScreen();
     splash.setStatus('Starting Clara...', 'info');
 
-    // Initialize Docker setup
-    log.info('Initializing Docker setup...');
-    dockerSetup = new DockerSetup();
+    // Initialize Docker setup with lean mode option
+    log.info(`Initializing Docker setup in ${leanMode ? 'LEAN' : 'FULL'} mode...`);
+    dockerSetup = new DockerSetup({ leanMode });
 
     // Register Docker container management IPC handlers
     registerDockerContainerHandlers();

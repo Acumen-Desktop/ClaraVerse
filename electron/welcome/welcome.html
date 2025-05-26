@@ -91,9 +91,30 @@
     <div class="actions-panel">
       <h3>⚡ Actions</h3>
 
+      <!-- Setup Mode Selection -->
+      <div class="setup-mode-section">
+        <h4>🎯 Setup Mode</h4>
+        <div class="mode-toggle">
+          <label class="mode-option">
+            <input type="radio" name="setup-mode" value="lean" id="lean-mode" checked>
+            <span class="mode-label">
+              <strong>🚀 Lean Mode</strong>
+              <small>Essential features only (~300MB)</small>
+            </span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="setup-mode" value="full" id="full-mode">
+            <span class="mode-label">
+              <strong>🔥 Full Mode</strong>
+              <small>All features including ML tools (~5GB)</small>
+            </span>
+          </label>
+        </div>
+      </div>
+
       <button class="btn hidden" id="continue-btn">
         <span>🚀</span>
-        Continue Setup
+        <span id="continue-text">Start ClaraVerse (Lean)</span>
       </button>
 
       <button class="btn primary hidden" id="start-podman-btn">

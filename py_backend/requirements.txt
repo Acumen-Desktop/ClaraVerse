@@ -25,8 +25,9 @@ numpy
 
 faster-whisper
 
-diffusers[torch]
-torch
+# Lightweight ML packages (CPU-only, much smaller)
+torch --index-url https://download.pytorch.org/whl/cpu
 transformers
 safetensors
-accelerate
+# diffusers[torch]  # Commented out - very large
+# accelerate        # Commented out - GPU acceleration not needed

@@ -59,6 +59,27 @@ class WelcomeFrontend {
         this.openExternal(url);
       });
     });
+
+    // Setup mode radio button listeners
+    const leanModeRadio = document.getElementById('lean-mode');
+    const fullModeRadio = document.getElementById('full-mode');
+
+    if (leanModeRadio) {
+      leanModeRadio.addEventListener('change', () => this.updateContinueButtonText());
+    }
+    if (fullModeRadio) {
+      fullModeRadio.addEventListener('change', () => this.updateContinueButtonText());
+    }
+  }
+
+  updateContinueButtonText() {
+    const continueText = document.getElementById('continue-text');
+    const leanModeRadio = document.getElementById('lean-mode');
+
+    if (continueText && leanModeRadio) {
+      const isLean = leanModeRadio.checked;
+      continueText.textContent = `Start ClaraVerse (${isLean ? 'Lean' : 'Full'})`;
+    }
   }
 
   async checkPrerequisites() {
@@ -187,11 +208,13 @@ class WelcomeFrontend {
       continueBtn.classList.remove('hidden');
       if (container.status === 'running') {
         continueBtn.className = 'btn success';
-        continueBtn.innerHTML = '<span>🚀</span>Start ClaraVerse';
+        continueBtn.innerHTML = '<span>🚀</span><span id="continue-text">Start ClaraVerse (Lean)</span>';
       } else {
         continueBtn.className = 'btn';
-        continueBtn.innerHTML = `<span>🚀</span>Start ClaraVerse (${container.engine} will be started)`;
+        continueBtn.innerHTML = `<span>🚀</span><span id="continue-text">Start ClaraVerse (${container.engine} will be started)</span>`;
       }
+      // Update the button text based on selected mode
+      this.updateContinueButtonText();
     }
   }
 
@@ -200,7 +223,12 @@ class WelcomeFrontend {
   }
 
   continueSetup() {
-    ipcRenderer.invoke('start-main-app');
+    // Get the selected setup mode
+    const leanModeRadio = document.getElementById('lean-mode');
+    const leanMode = leanModeRadio ? leanModeRadio.checked : true; // Default to lean mode
+
+    console.log(`Starting ClaraVerse in ${leanMode ? 'LEAN' : 'FULL'} mode`);
+    ipcRenderer.invoke('start-main-app', { leanMode });
   }
 
   skipSetup() {
